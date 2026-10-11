@@ -52,7 +52,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   padding-inline: var(--margin);
   transition: opacity .28s ease;
 }
-.stage.is-leaving { opacity: 0; }
+.stage.is-leaving > :not(.vim) { opacity: 0; transition: opacity .35s ease; }
+.stage.is-leaving .minimap, .stage.is-leaving .eye-read { opacity: 0; transition: opacity .35s ease; }
 .top, .vim, .status, .cmdline, .desk, .foot { width: 100%; max-width: var(--wide); margin-inline: auto; }
 
 .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 22px 18px; font-size: 12.5px; }
@@ -100,9 +101,12 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .p { color: var(--dim); }
 .typed { color: var(--ink); outline: 1px solid var(--chrome); outline-offset: 1px; }
 
-.eye { position: absolute; right: 30px; top: 66px; width: 250px; height: 140px; pointer-events: none; opacity: 0; transition: opacity .6s ease; }
-.eye-read { position: absolute; right: -70px; top: 70px; margin: 0; font-size: 9px; line-height: 1.2; color: var(--chrome); white-space: pre; pointer-events: none; opacity: 0; transition: opacity .6s ease; font-variant-numeric: tabular-nums; }
-.vim.has-eye .eye, .vim.has-eye .eye-read { opacity: 1; }
+.code { padding-right: 70px; }
+.iris { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+.eye-read { position: absolute; z-index: 3; margin: 0; font-size: 9px; line-height: 1.2; color: var(--chrome); white-space: pre; pointer-events: none; font-variant-numeric: tabular-nums; }
+.minimap { position: absolute; right: 0; top: 18px; width: 58px; height: calc(100% - 18px); cursor: pointer; z-index: 1; }
+.num { transition: box-shadow .6s ease; }
+.warp { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
 
 .status, .cmdline {
   display: flex;
@@ -184,8 +188,9 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
   <section class="vim" id="vim" aria-hidden="true">
     <div class="code" id="code"></div>
-    <canvas class="eye" id="eye"></canvas>
-    <pre class="eye-read" id="eyeread"></pre>
+    <canvas class="minimap" id="minimap" aria-hidden="true"></canvas>
+    <canvas class="iris" id="iris"></canvas>
+    <pre class="eye-read" id="eyeread" hidden></pre>
   </section>
   <p class="status" id="status" aria-hidden="true"><span class="mode">NORMAL</span><span class="path"></span><span class="pos"></span></p>
   <p class="cmdline" id="cmdline" aria-hidden="true"><span class="cmd"></span><span class="showcmd"></span></p>
@@ -203,9 +208,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   </footer>
 </main>
 <canvas class="overlay" id="overlay" aria-hidden="true"></canvas>
+<canvas class="warp" id="warp" aria-hidden="true"></canvas>
 
 <script src="content.js"></script>
 <script src="code.js"></script>
+<script src="iris.js"></script>
 <script>
 /* Content lives in content.js and code.js. Everything here is the machinery. */
 const $ = (s) => document.querySelector(s);
@@ -322,6 +329,7 @@ function paint(i) { if (rows[i]) rows[i].txt.innerHTML = lineHTML(i); }
 let lastFile = null;
 function openFile(f) {
   file = lastFile = f;
+  heat = [];
   lines = f.text.split("\n").map((text) => ({ text }));
   retokenize();
   code.classList.remove("is-closing");
@@ -354,7 +362,7 @@ function closeFile() {
   file = null; mode = "shell"; scrambles.clear();
   code.classList.add("is-closing");
   statusEl.classList.remove("is-on"); cmdEl.classList.remove("is-on");
-  vim.classList.remove("has-eye"); eyeOn = false;
+  if (eyeE) eyeE.open = false;
   $("#note").textContent = tagline;
   if (reduced) setTimeout(() => openFile(CODE[(CODE.indexOf(lastFile) + 1) % CODE.length]), 400);
 }
@@ -445,7 +453,6 @@ function half(dir) {
 }
 
 /* ---------- commands ---------- */
-let eyeOn = false;
 function runCmd(raw) {
   const s = raw.trim(), [name, ...args] = s.split(/\s+/);
   if (/^(q|qa|q!|qa!|wq|x)$/.test(name)) { closeFile(); return; }
@@ -454,14 +461,10 @@ function runCmd(raw) {
     applyPalette(PALETTES[args[0]] ? args[0] : nextPalette());
     setCmd(`<span class="msg">colorscheme ${C.name}</span>`, true); return;
   }
-  if (/^!.*(eye|face)/.test(s)) { eyeOn = true; vim.classList.add("has-eye"); setCmd(":" + s); return; }
+  if (/^!.*(eye|iris|face)/.test(s)) { openEye(); setCmd(":" + s); return; }
   if (name === "help" || name === "h") { setCmd(`<span class="msg">hjkl w b { } gg G · i to type · :theme · :q · enter ↩ to come in</span>`, true); return; }
   if (name === "w") { setCmd(`<span class="msg">"${esc(file.path.split("/").pop())}" written. (not really)</span>`, true); return; }
   setCmd(`<span class="err">E492: Not an editor command: ${esc(s)}</span>`, true);
-}
-function leave() {
-  $("#stage").classList.add("is-leaving");
-  setTimeout(() => { location.href = $("#enter").getAttribute("href"); }, reduced ? 0 : 260);
 }
 $("#enter").addEventListener("click", (e) => { e.preventDefault(); leave(); });
 $("#themeKey").addEventListener("click", () => {
@@ -471,6 +474,7 @@ $("#themeKey").addEventListener("click", () => {
 
 /* ---------- keys (shared by you and the autopilot) ---------- */
 function handleKey(k, auto) {
+  if (leaving) return;
   if (!auto) {
     noteUser();
     if (mode === "cmd" && cmdByAuto) { mode = "normal"; setCmd(""); }   // you take over from the autopilot
@@ -629,59 +633,212 @@ const hands = (() => {
   return { press, draw };
 })();
 
-/* ---------- the eye ---------- */
-const eyeCanvas = $("#eye"), eyeRead = $("#eyeread"), ov = $("#overlay");
-const eye = { px: 0, py: 0, blinkAt: 0 };
-const mouse = { x: 0, y: 0, t: 0 };
-addEventListener("pointermove", (e) => { mouse.x = e.clientX; mouse.y = e.clientY; mouse.t = performance.now(); });
-function drawEye(t) {
-  const x = fitCanvas(ov, innerWidth, innerHeight);
-  x.clearRect(0, 0, innerWidth, innerHeight);
-  if (!eyeOn || !file || !eyeCanvas.offsetParent) return;
-  const w = eyeCanvas.clientWidth, h = eyeCanvas.clientHeight, e = fitCanvas(eyeCanvas, w, h);
-  e.clearRect(0, 0, w, h);
-  const r = eyeCanvas.getBoundingClientRect(), ex = r.left + w / 2, ey = r.top + h / 2;
-  const curEl = code.querySelector(".cursor"), cr = curEl ? curEl.getBoundingClientRect() : null;
-  const useMouse = t - mouse.t < 3000 && mouse.t;
-  const tgt = useMouse ? mouse : cr ? { x: cr.left + cr.width / 2, y: cr.top + cr.height / 2 } : { x: ex, y: ey };
-  eye.px += (clamp((tgt.x - ex) / 420, -.55, .55) - eye.px) * .12;
-  eye.py += (clamp((tgt.y - ey) / 300, -.4, .4) - eye.py) * .12;
-  if (!eye.blinkAt) eye.blinkAt = t + 2500;
-  let lid = 1;
-  const dt = t - eye.blinkAt;
-  if (!reduced && dt > 0 && dt < 160) lid = Math.abs(dt - 80) / 80;
-  else if (dt >= 160) eye.blinkAt = t + 2600 + Math.random() * 4200;
-  const cw = 4.1, chh = 7.2, cols = Math.floor(w / cw), rws = Math.floor(h / chh), aspect = (w / h) * .55;
-  const src = file.text.replace(/\s+/g, " ");
-  const off = Math.floor(t / 160) % src.length;
-  e.font = "6.6px 'IBM Plex Mono', monospace"; e.textBaseline = "top";
-  let seed = 7;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let ri = 0; ri < rws; ri++) for (let ci = 0; ci < cols; ci++) {
-    const n = rnd(), ch = src[(off + ri * cols + ci) % src.length];
-    if (ch === " ") continue;
-    const nx = (ci + .5) / cols * 2 - 1, ny = (ri + .5) / rws * 2 - 1;
-    const half = .78 * Math.pow(Math.max(0, 1 - nx * nx), .8) * lid, inside = Math.abs(ny) < half;
-    const dist = Math.hypot((nx - eye.px) * aspect, ny - eye.py * lid), R = .38;
-    let a;
-    if (inside) { if (dist < R * .42) continue; a = dist < R ? (dist > R * .8 ? 1 : .8) : .42; }
-    else { const hz = Math.hypot(nx, ny * .9); if (n < .78 - hz * .5 || hz > 1.15) continue; a = .2 * (1.15 - hz); }
-    e.fillStyle = a >= 1 ? C.ink : rgba(C.ink, Math.max(0, a));
-    e.fillText(ch, ci * cw, ri * chh);
+/* ---------- the iris ---------- */
+// It opens in the wall when you hold still, reads along with the cursor,
+// and if you rest the pointer on it long enough it lets you in.
+const irisCanvas = $("#iris"), eyeRead = $("#eyeread"), ov = $("#overlay"), warp = $("#warp"), mini = $("#minimap");
+const mouse = { x: -1, y: -1, t: 0, still: 0 };
+function notePointer(e) {
+  const now = performance.now();
+  if (Math.hypot(e.clientX - mouse.x, e.clientY - mouse.y) > 3) mouse.still = now;
+  mouse.x = e.clientX; mouse.y = e.clientY; mouse.t = now;
+}
+addEventListener("pointermove", notePointer);
+addEventListener("pointerdown", notePointer);
+let eyeE = null, leaving = false, gaze = 0, lastFrame = 0;
+const vimRect = () => vim.getBoundingClientRect();
+const cursorRect = () => { const c = code.querySelector(".cursor"); return c ? c.getBoundingClientRect() : null; };
+const inside = (r, p) => p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom;
+function eyeSize() { const w = clamp(vimRect().width * .38, 190, 300); return { w, h: w * .56 }; }
+function openEye(at) {
+  const r = vimRect(), { w, h } = eyeSize(), now = performance.now();
+  if (eyeE && eyeE.open) { eyeE.closeAt = now + 7000; return; }
+  let cx, cy;
+  if (at) { cx = at.x - r.left; cy = at.y - r.top; }
+  else { const cr = cursorRect(); cx = r.width - w / 2 - 90; cy = cr ? cr.top - r.top - 30 : r.height * .4; }
+  cx = clamp(cx, w / 2 + 40, Math.max(w / 2 + 40, r.width - w / 2 - 80));
+  cy = clamp(cy, h / 2 + 20, Math.max(h / 2 + 20, r.height - h / 2 - 10));
+  eyeE = Iris.create(cx, cy, w, h);
+  eyeE.text = (file || CODE[0]).text.replace(/\s+/g, "");
+  eyeE.closeAt = now + 7000;
+}
+function tickEye(t, dt) {
+  const o = fitCanvas(ov, innerWidth, innerHeight);
+  o.clearRect(0, 0, innerWidth, innerHeight);
+  const r = vimRect(), g = fitCanvas(irisCanvas, r.width, r.height);
+  g.clearRect(0, 0, r.width, r.height);
+  const fresh = mouse.t && t - mouse.t < 2500;
+  // hold the pointer still over the code and the code looks back
+  if (!eyeE && !leaving && !reduced && file && fresh && t - mouse.still > 900 && inside(r, mouse) && r.width > 520) {
+    const side = mouse.x - r.left < r.width / 2 ? 1 : -1;
+    openEye({ x: mouse.x + side * eyeSize().w * .8, y: mouse.y });
   }
-  const bx = r.left + (eye.px / aspect + 1) / 2 * w, by = r.top + (eye.py * lid + 1) / 2 * h;
-  if (lid > .3) { e.strokeStyle = C.ink; e.strokeRect(Math.round(bx - r.left - 9) + .5, Math.round(by - r.top - 7) + .5, 18, 14); }
-  // the lines of sight
-  x.strokeStyle = rgba(C.ink, .45); x.setLineDash([3, 3]); x.lineWidth = 1;
-  const sights = [];
-  if (cr) sights.push({ x: cr.right + 2, y: cr.top + cr.height / 2, box: false });
-  if (useMouse) sights.push({ x: mouse.x, y: mouse.y, box: true });
-  for (const s of sights) {
-    x.beginPath(); x.moveTo(bx - 9, by); x.lineTo(s.x, s.y); x.stroke();
-    if (s.box) { x.setLineDash([]); x.strokeRect(Math.round(s.x - 11) + .5, Math.round(s.y - 7) + .5, 22, 14); x.setLineDash([3, 3]); }
+  if (!eyeE) { eyeRead.hidden = true; gaze = 0; return; }
+  const e = eyeE, cr = cursorRect();
+  let focus = null;
+  if (leaving) focus = { x: e.cx, y: e.cy, kind: "you" };
+  else if (fresh) focus = { x: mouse.x - r.left, y: mouse.y - r.top, kind: "pointer" };
+  else if (cr && file) focus = { x: cr.left - r.left, y: cr.top + cr.height / 2 - r.top, kind: "caret" };
+  Iris.update(e, t, dt, focus, reduced);
+  if (!leaving && e.open && (fresh || t - lastUser < 2500)) e.closeAt = Math.max(e.closeAt, t + 2500);
+  if (!leaving && e.open && t > e.closeAt) e.open = false;
+  if (!e.open && e.lid.v < .02) { eyeE = null; eyeRead.hidden = true; $("#note").textContent = tagline; return; }
+  Iris.draw(g, e, t, e.text, { ink: C.ink, accent: C.accent, bg: C.bg }, { mask: true });
+  const p = e.p, px = r.left + p.x, py = r.top + p.y;
+  // look at it to enter
+  const onIris = fresh && !leaving && e.lid.v > .9 && Math.hypot(mouse.x - px, mouse.y - py) < p.ri;
+  gaze = onIris ? Math.min(1, gaze + dt / 1.6) : Math.max(0, gaze - dt * 1.5);
+  if (gaze > .01) {
+    g.strokeStyle = C.accent; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(p.x, p.y, p.ri + 7, -Math.PI / 2, -Math.PI / 2 + gaze * Math.PI * 2); g.stroke();
   }
-  x.setLineDash([]);
-  eyeRead.textContent = `['pupil:u'] ${eye.px.toFixed(7)}\n${eye.py.toFixed(7)}\n${lid.toFixed(10)}\n${useMouse ? "pointer" : "cursor"}`;
+  if (gaze >= 1) leave();
+  if (!leaving && e.lid.v > .5) {
+    o.strokeStyle = rgba(C.ink, .4); o.setLineDash([3, 3]); o.lineWidth = 1;
+    if (cr && !onIris) { o.beginPath(); o.moveTo(px, py); o.lineTo(cr.right + 2, cr.top + cr.height / 2); o.stroke(); }
+    if (fresh && !onIris && !inside({ left: r.left + e.cx - e.w / 2, right: r.left + e.cx + e.w / 2, top: r.top + e.cy - e.h / 2, bottom: r.top + e.cy + e.h / 2 }, mouse)) {
+      o.beginPath(); o.moveTo(px, py); o.lineTo(mouse.x, mouse.y); o.stroke();
+      o.setLineDash([]); o.strokeRect(Math.round(mouse.x - 11) + .5, Math.round(mouse.y - 7) + .5, 22, 14);
+    }
+    o.setLineDash([]);
+  }
+  if (!leaving && e.lid.v > .9 && !onIris) $("#note").textContent = "// rest the pointer on the iris to come in";
+  const bar = "█".repeat(Math.round(gaze * 8)) + "░".repeat(8 - Math.round(gaze * 8));
+  eyeRead.hidden = r.width < 600 || leaving;
+  eyeRead.textContent = `['iris:u'] ${((p.x - e.cx + e.w / 2) / e.w).toFixed(7)}\n${((p.y - e.cy + e.h / 2) / e.h).toFixed(7)}\npupil ${(p.rp / p.ri).toFixed(4)}\n${gaze > .01 ? bar : e.focusKind || "drifting"}`;
+  const right = e.cx + e.w / 2 + 10 + 120 < r.width;
+  eyeRead.style.left = (right ? e.cx + e.w / 2 + 10 : e.cx - e.w / 2 - 130) + "px";
+  eyeRead.style.top = e.cy - e.h / 2 + 18 + "px";
+}
+
+/* ---------- the way in ---------- */
+async function leave() {
+  if (leaving) return;
+  leaving = true;
+  const href = $("#enter").getAttribute("href");
+  if (reduced) { location.href = href; return; }
+  if (mode === "cmd" || mode === "insert") { mode = "normal"; setCmd(""); }
+  $("#stage").classList.add("is-leaving");
+  const r = vimRect();
+  if (!eyeE) openEye({ x: r.left + r.width / 2, y: r.top + clamp(r.height * .42, 110, r.height - 110) });
+  const e = eyeE;
+  e.open = true; e.dilate = .95; e.spinBoost = 2.2; e.closeAt = Infinity;
+  for (let k = 0; k < 40 && e.lid.v < .97; k++) await sleep(30);
+  const ox = r.left + e.p.x, oy = r.top + e.p.y;
+  const parts = collectGlyphs(e, r);
+  code.style.visibility = "hidden";
+  await swallow(parts, ox, oy);
+  await dive(ox, oy, e.p.rp);
+  try { sessionStorage.setItem("arrive", JSON.stringify({ x: ox / innerWidth, y: oy / innerHeight })); } catch {}
+  location.href = href;
+}
+// every visible character, where it sits on screen
+function collectGlyphs(e, vr) {
+  const out = [], cr = code.getBoundingClientRect();
+  const m = warp.getContext("2d"); m.font = "12px 'IBM Plex Mono', monospace";
+  const cw = m.measureText("M").width || 7.2;
+  const nodes = file ? rows.map((R) => R.txt) : [...code.querySelectorAll(".shell")];
+  for (const node of nodes) {
+    const tr = node.getBoundingClientRect();
+    if (tr.bottom < cr.top || tr.top > cr.bottom) continue;
+    const text = node.textContent, per = Math.max(1, Math.floor(tr.width / cw));
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === " ") continue;
+      const x = tr.left + (i % per) * cw, y = tr.top + Math.floor(i / per) * 13 + 6.5;
+      if (y > cr.bottom || y < cr.top) continue;
+      if (Math.abs(x - vr.left - e.cx) < e.w * .46 && Math.abs(y - vr.top - e.cy) < e.h * .4) continue;
+      out.push({ ch: text[i], x, y });
+    }
+  }
+  while (out.length > 3600) out.splice((Math.random() * out.length) | 0, 1);
+  return out;
+}
+// the code spirals into the pupil, nearest first
+function swallow(parts, ox, oy) {
+  return new Promise((done) => {
+    const W = innerWidth, H = innerHeight, far = Math.hypot(W, H) * .6, t0 = performance.now();
+    for (const p of parts) {
+      const dx = p.x - ox, dy = p.y - oy;
+      p.r0 = Math.hypot(dx, dy); p.a0 = Math.atan2(dy, dx);
+      p.delay = (p.r0 / far) * .5 + Math.random() * .12;
+      p.dur = .5 + Math.random() * .3;
+    }
+    (function frame(now) {
+      const x = fitCanvas(warp, W, H), T = (now - t0) / 1000;
+      x.clearRect(0, 0, W, H);
+      x.font = "12px 'IBM Plex Mono', monospace"; x.textBaseline = "middle"; x.fillStyle = C.ink;
+      let live = 0;
+      for (const p of parts) {
+        const u = clamp((T - p.delay) / p.dur, 0, 1);
+        if (u >= 1) continue;
+        live++;
+        const k = u * u * u, rad = p.r0 * (1 - k), a = p.a0 + 1.7 * k;
+        x.globalAlpha = (1 - k) * .85;
+        x.fillText(p.ch, ox + Math.cos(a) * rad, oy + Math.sin(a) * rad);
+      }
+      x.globalAlpha = 1;
+      if (live && T < 2.2) requestAnimationFrame(frame); else { x.clearRect(0, 0, W, H); done(); }
+    })(t0);
+  });
+}
+// then the pupil opens until it is the whole room
+function dive(ox, oy, r0) {
+  return new Promise((done) => {
+    const W = innerWidth, H = innerHeight, far = Math.hypot(Math.max(ox, W - ox), Math.max(oy, H - oy)) + 60;
+    const streaks = Array.from({ length: 360 }, () => ({ a: Math.random() * Math.PI * 2, k: Math.random(), len: 8 + Math.random() * 50, hot: Math.random() < .3 }));
+    const t0 = performance.now(), ms = 950;
+    (function frame(now) {
+      const x = fitCanvas(warp, W, H), u = clamp((now - t0) / ms, 0, 1);
+      const e = u < .5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2, R = r0 + (far - r0) * e;
+      x.clearRect(0, 0, W, H);
+      x.lineWidth = 1;
+      for (const s of streaks) {
+        const d = R + 6 + s.k * (80 + 240 * u), L = s.len * (1 + u * 4);
+        x.strokeStyle = s.hot ? C.accent : C.ink;
+        x.globalAlpha = (1 - u) * (.25 + .6 * (1 - s.k));
+        x.beginPath(); x.moveTo(ox + Math.cos(s.a) * d, oy + Math.sin(s.a) * d); x.lineTo(ox + Math.cos(s.a) * (d + L), oy + Math.sin(s.a) * (d + L)); x.stroke();
+      }
+      x.globalAlpha = 1;
+      x.fillStyle = C.bg;
+      x.beginPath(); x.arc(ox, oy, R, 0, Math.PI * 2); x.fill();
+      for (const [w, a] of [[10, .06], [4, .15], [1.5, .7]]) { x.lineWidth = w; x.strokeStyle = rgba(C.accent, a * (1 - u * .6)); x.beginPath(); x.arc(ox, oy, R, 0, Math.PI * 2); x.stroke(); }
+      if (u < 1) requestAnimationFrame(frame); else done();
+    })(t0);
+  });
+}
+
+/* ---------- minimap + where the cursor has been ---------- */
+let heat = [];
+function drawMini() {
+  if (!file || !mini.offsetParent) return;
+  const w = mini.clientWidth, h = mini.clientHeight, x = fitCanvas(mini, w, h);
+  x.clearRect(0, 0, w, h);
+  const lh = Math.min(3, h / lines.length), sx = .7;
+  lines.forEach((L, i) => {
+    let col = 0;
+    for (const [cls, s] of L.toks) {
+      if (s.trim()) { x.fillStyle = cls === "n" ? C.accent : rgba(C.ink, cls === "k" || cls === "f" ? .5 : .2); x.fillRect(6 + col * sx, i * lh, s.length * sx, Math.max(1, lh - 1)); }
+      col += s.length;
+    }
+    if (heat[i]) { x.fillStyle = rgba(C.accent, Math.min(.9, heat[i] / 6)); x.fillRect(0, i * lh, 2, Math.max(1, lh - .5)); }
+  });
+  const sh = code.scrollHeight || 1, y = (code.scrollTop / sh) * lines.length * lh, hh = (code.clientHeight / sh) * lines.length * lh;
+  x.fillStyle = rgba(C.ink, .06); x.fillRect(4, y, w - 4, hh);
+  x.strokeStyle = rgba(C.ink, .22); x.strokeRect(4.5, y + .5, w - 5, hh - 1);
+  x.fillStyle = C.accent; x.fillRect(4, cur.r * lh, w - 4, Math.max(1.5, lh));
+}
+mini.addEventListener("pointerdown", (e) => {
+  if (!file) return;
+  noteUser();
+  const r = mini.getBoundingClientRect(), lh = Math.min(3, r.height / lines.length);
+  if (mode !== "normal") { mode = "normal"; setMode("normal"); }
+  setCursor(Math.floor((e.clientY - r.top) / lh), 0);
+});
+function trackHeat(dt) {
+  if (!file || mode === "shell") return;
+  heat[cur.r] = (heat[cur.r] || 0) + dt;
+  const a = Math.min(.9, heat[cur.r] / 6);
+  rows[cur.r] && (rows[cur.r].num.style.boxShadow = `inset 2px 0 0 ${rgba(C.accent, a)}`);
 }
 
 /* ---------- autopilot ---------- */
@@ -689,7 +846,7 @@ let lastUser = -1e9;
 function noteUser() { lastUser = performance.now(); }
 addEventListener("pointerdown", noteUser);
 async function idle() {
-  while (performance.now() - lastUser < 6000 || document.hidden) await sleep(300);
+  while (leaving || performance.now() - lastUser < 6000 || document.hidden) await sleep(300);
 }
 async function press(k, base = 75) {
   await idle();
@@ -742,7 +899,7 @@ async function visit(k) {
     } else if (step === "C-d") { await press("C-d", 400); }
     else for (const ch of step) await press(ch, 90);
     await sleep(380 + Math.random() * 520);
-    if (s === 4 && !eyeOn) { await typeCmd("!./eye --track"); await sleep(1600); }
+    if (s === 4 && !eyeE) { await typeCmd("!./iris --watch"); await sleep(1600); }
     if (s === 11 && k % 2 === 1) { await typeCmd(`colorscheme ${nextPalette()}`); await sleep(1200); }
   }
   if (file !== f) return;
@@ -758,8 +915,16 @@ async function autopilot() {
 }
 
 /* ---------- loop + boot ---------- */
+let frameN = 0;
 function loop(t) {
-  if (!document.hidden) { hands.draw(t); drawEye(t); }
+  const dt = lastFrame ? Math.min(.05, (t - lastFrame) / 1000) : 1 / 60;
+  lastFrame = t;
+  if (!document.hidden) {
+    hands.draw(t);
+    tickEye(t, dt);
+    trackHeat(dt);
+    if (++frameN % 6 === 0) drawMini();
+  }
   requestAnimationFrame(loop);
 }
 if (reduced) { openFile(CODE[0]); setCmd('<span class="msg">hjkl to move · :help · enter ↩ to come in</span>', true); }

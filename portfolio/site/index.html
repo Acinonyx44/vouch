@@ -434,6 +434,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .mouse path, .mouse rect { fill: none; stroke: var(--dim); stroke-width: 1; transition: fill .5s ease, stroke .5s ease; }
 .mouse .lit { fill: var(--accent); stroke: var(--accent); transition: none; }
 
+.arrive-ring { position: fixed; z-index: 30; border: 1px solid var(--accent); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
 .overlay { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
 
 /* ---------- responsive ---------- */
@@ -559,6 +560,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 <canvas class="overlay" id="overlay" aria-hidden="true"></canvas>
 
 <script src="../content.js"></script>
+<script src="../iris.js"></script>
 <script>
 /* Content lives in ../content.js. Everything here is the machinery. */
 const SECTIONS = [
@@ -817,6 +819,7 @@ function goTo(i, instant) {
   if (instant) pos = i;
   if (i === sel && buffer.childElementCount) return;
   sel = i;
+  blinkEye();
   cards.forEach((c, k) => { c.classList.toggle("is-on", k === i); c.setAttribute("aria-current", k === i ? "page" : "false"); });
   clearTimeout(selTimer);
   selTimer = setTimeout(() => openSection(SECTIONS[i]), instant ? 0 : 160);
@@ -1163,69 +1166,55 @@ addEventListener("pointermove", (e) => {
 });
 
 /* ---------- the eye ---------- */
+// The same iris as the intro. It reads whatever card you hover, follows the
+// worm when it's out, and blinks when you change section.
 const eyeCanvas = $("#eye"), eyeRead = $("#eyeread");
-const eyeText = [ME.name, ME.role, ...PROJECTS.map((p) => p.name + " " + p.desc), ...STACK.flatMap((g) => g.items.map((i) => i[0]))].join(" · ").replace(/\s+/g, " ");
-const eye = { px: 0, py: 0, lid: 0, open: false, next: 1400, blinkAt: 0, wander: [0, 0], wanderT: 0, state: "closed" };
+const eyeText = [ME.name, ME.role, ...PROJECTS.map((p) => p.name + p.desc), ...STACK.flatMap((g) => g.items.map((i) => i[0]))].join("·").replace(/\s+/g, "");
+const eye = { state: "closed" };
+let iris = null, eyeLast = 0, hoverCard = null;
+document.addEventListener("pointerover", (e) => { hoverCard = e.target.closest(".commit, .card, .palette"); });
+function blinkEye() { if (iris) iris.blinkAt = performance.now(); }
 function drawEye(t) {
   const w = eyeCanvas.clientWidth, h = eyeCanvas.clientHeight; if (!w) return;
   const x = fitCanvas(eyeCanvas, w, h);
   x.clearRect(0, 0, w, h);
-  const small = w < 130, cw = small ? 2.9 : 4.1, ch = small ? 4.6 : 7.2;
-  x.font = `${small ? 4.4 : 6.6}px "IBM Plex Mono", monospace`;
-  x.textBaseline = "top";
-  // target
-  const r = eyeCanvas.getBoundingClientRect(), ex = r.left + w / 2, ey = r.top + h / 2;
-  let tx, ty;
-  if (worm.state !== "lurking") { tx = worm.seg[0].x - ex; ty = worm.seg[0].y - ey; eye.state = "on worm"; }
-  else if (t - mouse.t < 5000 && mouse.t) { tx = mouse.x - ex; ty = mouse.y - ey; eye.state = "tracking"; }
-  else { if (t > eye.wanderT) { eye.wander = [(Math.random() - .5) * 500, (Math.random() - .5) * 260]; eye.wanderT = t + 1500 + Math.random() * 2500; } [tx, ty] = eye.wander; eye.state = "drifting"; }
-  const gx = clamp(tx / 420, -.55, .55), gy = clamp(ty / 380, -.38, .38);
-  eye.px += (gx - eye.px) * .12; eye.py += (gy - eye.py) * .12;
-  // lids
-  if (!eye.open && t > eye.next) { eye.open = true; eye.blinkAt = t + 3000; }
-  eye.lid += ((eye.open ? 1 : 0) - eye.lid) * .14;
-  let lid = eye.lid;
-  if (eye.open && !reduced) {
-    const dt = t - eye.blinkAt;
-    if (dt > 0 && dt < 160) lid *= Math.abs(dt - 80) / 80;
-    else if (dt >= 160) eye.blinkAt = t + 2600 + Math.random() * 4200;
+  const dt = eyeLast ? Math.min(.05, (t - eyeLast) / 1000) : 1 / 60;
+  eyeLast = t;
+  if (!iris) { iris = Iris.create(w / 2, h / 2, w, h); iris.open = false; }
+  iris.cx = w / 2; iris.cy = h / 2; iris.w = w * .98; iris.h = Math.min(h * .95, w * .62);
+  const r = eyeCanvas.getBoundingClientRect();
+  let focus = null;
+  if (worm.state !== "lurking") { focus = { x: worm.seg[0].x - r.left, y: worm.seg[0].y - r.top, kind: "worm" }; eye.state = "on worm"; }
+  else if (hoverCard && hoverCard.isConnected && t - mouse.t < 4000) { const b = hoverCard.getBoundingClientRect(); focus = { x: b.left + b.width / 2 - r.left, y: b.top + b.height / 2 - r.top, kind: "card" }; eye.state = "reading"; }
+  else if (mouse.t && t - mouse.t < 5000) { focus = { x: mouse.x - r.left, y: mouse.y - r.top, kind: "pointer" }; eye.state = "tracking"; }
+  else eye.state = "drifting";
+  iris.open = !(document.hidden || ghostState === "away") && t > (arrived ? 1300 : 600);
+  iris.dilate = focus?.kind === "card" ? .85 : null;
+  Iris.update(iris, t, dt, focus, reduced);
+  if (iris.openNow < .1) eye.state = iris.open ? "blinking" : "closed";
+  const small = w < 130;
+  Iris.draw(x, iris, t, eyeText, { ink: C.ink, accent: C.accent, bg: C.bg }, { font: small ? 3.4 : 5 });
+  if (!small) {
+    const p = iris.p;
+    eyeRead.textContent = `['iris:u'] ${((p.x - iris.cx + iris.w / 2) / iris.w).toFixed(7)}\n['pupil']  ${(p.rp / p.ri).toFixed(7)}\n['lid']    ${iris.openNow.toFixed(4)}\n['focus']  ${hoverCard && eye.state === "reading" ? (hoverCard.querySelector(".name, .lbl")?.textContent || "").trim().slice(0, 16) : SECTIONS[sel].id + "/"}`;
   }
-  if (document.hidden || ghostState === "away") { lid *= .15; eye.state = "closed"; }
-  if (lid < .1 && eye.state !== "closed") eye.state = eye.open ? "blinking" : "closed";
-  const cols = Math.floor(w / cw), rows = Math.floor(h / ch), aspect = (w / h) * .55;
-  let ti = Math.floor(t / 180) % eyeText.length;
-  const hr = rng(7);
-  for (let rI = 0; rI < rows; rI++) {
-    for (let cI = 0; cI < cols; cI++) {
-      const nx = (cI + .5) / cols * 2 - 1, ny = (rI + .5) / rows * 2 - 1;
-      const n = hr();
-      const ch_ = eyeText[(ti + rI * cols + cI) % eyeText.length];
-      if (ch_ === " ") continue;
-      const half = .78 * Math.pow(Math.max(0, 1 - nx * nx), .8) * lid;
-      const inside = Math.abs(ny) < half;
-      const dx = (nx - eye.px) * aspect, dy = ny - eye.py * (half / .78 || 0), dist = Math.hypot(dx, dy);
-      const R = .36 * (small ? 1.1 : 1);
-      let a = 0;
-      if (inside) {
-        if (dist < R * .42) continue; // pupil hole
-        a = dist < R ? (dist > R * .8 ? 1 : .8) : .45;
-      } else {
-        const hz = Math.hypot(nx * 1.0, ny * .9);
-        if (n < .78 - hz * .5 || hz > 1.15) continue;
-        a = .2 * (1.15 - hz);
-      }
-      x.fillStyle = a > .9 ? C.ink : rgba(C.ink, Math.max(0, a));
-      x.fillText(ch_, cI * cw, rI * ch);
-    }
-  }
-  // pupil box
-  if (lid > .25) {
-    const bx = (eye.px / aspect * 1 + 1) / 2 * w, by = (eye.py * (lid) + 1) / 2 * h, s = (small ? 5 : 9) * Math.min(1, lid * 1.4);
-    x.strokeStyle = C.ink; x.lineWidth = 1; x.strokeRect(Math.round(bx - s) + .5, Math.round(by - s * .8) + .5, s * 2, s * 1.6);
-    x.fillStyle = C.accent; x.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 2, 2);
-  }
-  if (!small) eyeRead.textContent = `['pupil:x'] ${eye.px.toFixed(7)}\n['pupil:y'] ${eye.py.toFixed(7)}\n['lid']     ${lid.toFixed(4)}\n['focus']   ${SECTIONS[sel].id}/`;
 }
+
+/* ---------- arriving through the pupil ---------- */
+let arrived = false;
+(function arrive() {
+  let a = null;
+  try { a = JSON.parse(sessionStorage.getItem("arrive")); sessionStorage.removeItem("arrive"); } catch {}
+  if (!a || reduced || !document.body.animate) return;
+  arrived = true;
+  const at = `${(a.x * 100).toFixed(1)}% ${(a.y * 100).toFixed(1)}%`, curve = "cubic-bezier(.7,0,.2,1)";
+  $("#stage").animate([{ clipPath: `circle(0px at ${at})` }, { clipPath: `circle(150% at ${at})` }], { duration: 1150, easing: curve });
+  const ring = document.createElement("div");
+  ring.className = "arrive-ring";
+  ring.style.left = (a.x * 100) + "%"; ring.style.top = (a.y * 100) + "%";
+  document.body.append(ring);
+  ring.animate([{ width: "0px", height: "0px", opacity: 1 }, { width: "300vmax", height: "300vmax", opacity: 0 }], { duration: 1150, easing: curve }).onfinish = () => ring.remove();
+})();
 
 /* ---------- the worm ---------- */
 const ov = $("#overlay");

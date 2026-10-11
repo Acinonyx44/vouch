@@ -3,12 +3,19 @@
 A static portfolio in two rooms, like hancore.dev:
 
 - **`index.html`** is the intro: a shell types `nvim`, a vim buffer opens on
-  real code from your projects, the cursor wanders, a line glitches,
-  `:!./eye --track` opens an ASCII eye that watches the cursor (or you), and
-  two hand skeletons type on a keyboard underneath. Press **enter ↩** to come in.
+  real code from your projects, the cursor wanders, a line glitches, and two
+  hand skeletons type on a keyboard underneath. Hold the pointer still over the
+  code and an iris opens in the wall: it reads along with the cursor (pupil
+  narrows), follows you (pupil widens the faster you move) and blinks. Rest the
+  pointer on the iris, or press **enter ↩**, and the code spirals into the
+  pupil, the pupil opens until it fills the screen, and the editor unfolds
+  from that exact point. A minimap and a heat trail in the gutter show where
+  the cursor has been.
 - **`site/index.html`** is the editor: a wheel of sections with ink tendrils, a
-  terminal buffer (`git log --graph projects/`), the eye, a worm you can wake
-  from the status bar, a command prompt and palettes.
+  terminal buffer (`git log --graph projects/`), the same iris (it reads the
+  card you hover and blinks when you change section), a worm you can wake from
+  the status bar, a command prompt and palettes.
+- **`iris.js`** draws the eye for both pages.
 
 ## Make it yours
 
