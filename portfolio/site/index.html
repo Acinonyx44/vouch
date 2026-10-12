@@ -203,7 +203,7 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 .kv {
   display: grid;
-  grid-template-columns: 7ch max-content minmax(0, 1fr);
+  grid-template-columns: 8ch max-content minmax(0, 1fr);
   column-gap: 2ch;
   align-items: center;
   font-variant-numeric: tabular-nums;
@@ -956,7 +956,7 @@ const RENDER = {
     return [
       { cmd: "whoami", out: out(`<span style="color:var(--ink)">${esc(ME.name)}</span>\n<span class="muted">${esc(ME.role)} · ${esc(ME.location)}</span>`) },
       { cmd: "cat about.md", out: el("div", "prose", ME.about.map((p) => `<p>${p}</p>`).join("")) },
-      { cmd: "fetch ~", out: statsBlock([["repos", PROJECTS.length, `${meter(PROJECTS.length / 10)}`], ["langs", langs.size, [...langs].join(", ")], ["now", "→", esc(ME.now)]]) },
+      { cmd: "fetch ~", out: statsBlock([["projects", PROJECTS.length, `${meter(PROJECTS.length / 10)}`], ["langs", langs.size, [...langs].join(", ")], ["now", "→", esc(ME.now)]]) },
       { out: out(`<span class="muted">try</span> <a href="#projects" data-go="projects" style="color:var(--ink)">projects/</a> <span class="muted">or type</span> help`) },
     ];
   },
@@ -964,7 +964,7 @@ const RENDER = {
     const dates = PROJECTS.map((p) => p.date).sort();
     return [
       { cmd: "fetch projects/", out: statsBlock([
-        ["repos", PROJECTS.length, meter(PROJECTS.length / 12) + `  <span class="muted">${PROJECTS.length} shipped, more cooking</span>`],
+        ["projects", PROJECTS.length, meter(PROJECTS.length / 12) + `  <span class="muted">research, quant and full-stack</span>`],
         ["langs", new Set(PROJECTS.flatMap((p) => p.lang.split(" · "))).size, ""],
         ["since", dates[0], `pushed <span style="color:var(--ink)">${dates[dates.length - 1]}</span>`],
       ]) },
@@ -1000,7 +1000,7 @@ const RENDER = {
       mail.append(btn); d.append(mail);
       for (const l of ME.links) d.append(el("div", "", `<span class="muted">${esc(l.label.padEnd(7))}</span><a href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.href.replace(/^https?:\/\//, ""))}</a>`));
       d.append(el("div", "", `<span class="muted">where  </span>${esc(ME.location)}`));
-      d.append(el("p", "out muted", "\nopen to internships, collaborations and good conversations."));
+      d.append(el("p", "out muted", "\nopen to ML and quant research roles, collaborations and good conversations."));
       return d;
     } }];
   },
