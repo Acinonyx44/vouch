@@ -54,3 +54,28 @@ from `themes/` in the editor (`:bg #1a1024` and `bg #1a1024` work too). The
 lines, greys and text are re-mixed from the background you choose, and light
 backgrounds switch to dark text. The choice is remembered in the browser and
 carries from the intro into the editor.
+
+## Live at gaurav-agarwal.nyc
+
+`.github/workflows/pages.yml` publishes this folder to GitHub Pages on every
+push to `main` that touches `portfolio/`. `CNAME` tells Pages the domain.
+
+One-time setup:
+
+1. GitHub → repo **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. At the domain registrar, add DNS records:
+
+   | Type  | Host  | Value                   |
+   |-------|-------|-------------------------|
+   | A     | @     | 185.199.108.153         |
+   | A     | @     | 185.199.109.153         |
+   | A     | @     | 185.199.110.153         |
+   | A     | @     | 185.199.111.153         |
+   | AAAA  | @     | 2606:50c0:8000::153     |
+   | AAAA  | @     | 2606:50c0:8001::153     |
+   | AAAA  | @     | 2606:50c0:8002::153     |
+   | AAAA  | @     | 2606:50c0:8003::153     |
+   | CNAME | www   | acinonyx44.github.io    |
+
+3. Settings → Pages → Custom domain: `gaurav-agarwal.nyc`, then tick
+   **Enforce HTTPS** once the certificate is issued (can take up to an hour).

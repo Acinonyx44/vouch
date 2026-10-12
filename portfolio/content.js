@@ -7,7 +7,7 @@ const ME = {
   initials: "GA",                 // the little brand mark
   handle: "gaurav",               // prompt user: gaurav@dev
   host: "dev",
-  domain: "gaurav.dev",
+  domain: "gaurav-agarwal.nyc",
   role: "MS Electrical Engineering · Columbia University",
   location: "New York, NY",
   email: "gaurav.agarwal@columbia.edu",
@@ -42,7 +42,7 @@ const PROJECTS = [
   { name: "paralysis-care-monitor", date: "2023-06", lang: "ML · embedded", license: "capstone",
     desc: "ML-driven autonomous monitoring for paralysis patients: 35% more patient throughput and 40% fewer critical issues.",
     url: "https://github.com/Acinonyx44", art: "bars" },
-  { name: "gaurav.dev", date: "2026-10", lang: "HTML", license: "this site",
+  { name: "gaurav-agarwal.nyc", date: "2026-10", lang: "HTML", license: "this site",
     desc: "A portfolio that opens as a wall of code. Look at the iris to fall through into an editor.",
     url: "https://github.com/Acinonyx44/vouch/tree/main/portfolio", art: "grid" },
 ];
