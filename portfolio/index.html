@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>acinonyx.dev</title>
+<title>gaurav.dev</title>
 <meta name="description" content="A quiet wall of code. Press enter to come in.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -147,6 +147,25 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 .kbd span.space.lit { background: var(--accent); }
 .hands { position: absolute; inset: 0; width: 100%; height: 100%; }
 
+.actions { position: relative; }
+.picker {
+  position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 12;
+  width: min(330px, calc(100vw - 32px)); padding: 12px;
+  background: var(--line); border: 1px solid var(--rule);
+  display: grid; gap: 8px;
+}
+.picker[hidden] { display: none; }
+.pk-h { margin: 0; font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.pk-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pk-pal { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px 3px 3px; border: 1px solid var(--rule); color: var(--chrome); }
+.pk-pal i { width: 18px; height: 14px; border: 1px solid var(--rule); }
+.pk-pal[aria-pressed="true"], .pk-pal:hover { border-color: var(--ink); color: var(--ink); }
+.pk-sw { width: 24px; height: 24px; border: 1px solid var(--rule); }
+.pk-sw[aria-pressed="true"], .pk-sw:hover { outline: 1px solid var(--ink); outline-offset: 2px; }
+.pk-any { display: inline-flex; align-items: center; gap: 4px; color: var(--chrome); cursor: pointer; }
+.pk-any input { width: 26px; height: 26px; padding: 0; border: 1px solid var(--rule); background: none; cursor: pointer; }
+.pk-reset { color: var(--dim); padding: 0 4px; }
+.pk-reset:hover { color: var(--ink); }
 .foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 16px 22px; }
 .note { margin: 0; color: var(--ink); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .actions { display: flex; align-items: center; gap: 16px; flex: none; }
@@ -202,7 +221,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   <footer class="foot">
     <p class="note" id="note"></p>
     <div class="actions">
-      <button class="theme-key" id="themeKey" type="button" aria-label="Change theme"><b>›_</b>:theme</button>
+      <button class="theme-key" id="themeKey" type="button" aria-label="Change theme and background" aria-expanded="false" aria-controls="picker"><b>›_</b>:theme</button>
+      <div class="picker" id="picker" hidden></div>
       <a class="enter" id="enter" href="site/index.html">enter ↩</a>
     </div>
   </footer>
@@ -242,11 +262,16 @@ $("#note").textContent = tagline;
 let C = {};
 const PNAMES = Object.keys(PALETTES);
 function applyPalette(name) {
-  const p = PALETTES[name] || PALETTES.dusk, r = document.documentElement.style;
+  const p = withBg(PALETTES[name] || PALETTES.dusk, store.get("bg")), r = document.documentElement.style;
   for (const k of ["bg", "ink", "chrome", "dim", "rule", "line", "accent"]) r.setProperty("--" + k, p[k]);
   r.setProperty("color-scheme", p.scheme);
   C = { ...p, name: PALETTES[name] ? name : "dusk" };
   store.set("palette", C.name);
+  if (typeof renderPicker === "function") renderPicker();
+}
+function setBg(hex) {
+  store.set("bg", hex || "");
+  applyPalette(C.name);
 }
 const nextPalette = () => PNAMES[(PNAMES.indexOf(C.name) + 1) % PNAMES.length];
 applyPalette(store.get("palette") || "dusk");
@@ -457,20 +482,49 @@ function runCmd(raw) {
   const s = raw.trim(), [name, ...args] = s.split(/\s+/);
   if (/^(q|qa|q!|qa!|wq|x)$/.test(name)) { closeFile(); return; }
   if (/^(e|edit|enter|site)$/.test(name)) { leave(); return; }
+  if (name === "bg") {
+    const v = (args[0] || "").replace(/^#?/, "#");
+    if (/^#[0-9a-f]{6}$/i.test(v)) { setBg(v); setCmd(`<span class="msg">background ${v}</span>`, true); }
+    else if (args[0] === "reset") { setBg(""); setCmd('<span class="msg">background reset</span>', true); }
+    else setCmd('<span class="err">usage: :bg #1a1024 | :bg reset</span>', true);
+    return;
+  }
   if (name === "theme" || name === "colorscheme") {
+    if (PALETTES[args[0]] || !args[0]) store.set("bg", "");
     applyPalette(PALETTES[args[0]] ? args[0] : nextPalette());
     setCmd(`<span class="msg">colorscheme ${C.name}</span>`, true); return;
   }
   if (/^!.*(eye|iris|face)/.test(s)) { openEye(); setCmd(":" + s); return; }
-  if (name === "help" || name === "h") { setCmd(`<span class="msg">hjkl w b { } gg G · i to type · :theme · :q · enter ↩ to come in</span>`, true); return; }
+  if (name === "help" || name === "h") { setCmd(`<span class="msg">hjkl w b { } gg G · i to type · :theme · :bg #hex · :q · enter ↩ to come in</span>`, true); return; }
   if (name === "w") { setCmd(`<span class="msg">"${esc(file.path.split("/").pop())}" written. (not really)</span>`, true); return; }
   setCmd(`<span class="err">E492: Not an editor command: ${esc(s)}</span>`, true);
 }
 $("#enter").addEventListener("click", (e) => { e.preventDefault(); leave(); });
-$("#themeKey").addEventListener("click", () => {
-  applyPalette(nextPalette());
-  if (file) setCmd(`<span class="msg">colorscheme ${C.name}</span>`, true);
+/* ---------- the theme picker: palettes + any background colour ---------- */
+const picker = $("#picker");
+function renderPicker() {
+  const picker = document.getElementById("picker");
+  if (!picker || picker.hidden) return;
+  const bg = store.get("bg") || "";
+  picker.innerHTML = `<p class="pk-h">colorscheme</p><div class="pk-row">${PNAMES.map((n) => `<button type="button" class="pk-pal" data-pal="${n}" aria-pressed="${n === C.name}"><i style="background:${PALETTES[n].bg};box-shadow:inset -7px 0 0 ${PALETTES[n].accent}"></i>${n}</button>`).join("")}</div>
+<p class="pk-h">background</p><div class="pk-row">${BG_PRESETS.map((c) => `<button type="button" class="pk-sw" data-bg="${c}" aria-label="background ${c}" aria-pressed="${c === bg}" style="background:${c}"></button>`).join("")}<label class="pk-any" title="any colour"><input type="color" id="bgPick" value="${bg || C.bg}"><span>any</span></label><button type="button" class="pk-reset" data-bg="">reset</button></div>`;
+}
+picker.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  noteUser();
+  if (b.dataset.pal) { store.set("bg", ""); applyPalette(b.dataset.pal); }
+  else if (b.dataset.bg != null) setBg(b.dataset.bg);
+  if (file) setCmd(`<span class="msg">colorscheme ${C.name}${store.get("bg") ? " · bg " + store.get("bg") : ""}</span>`, true);
 });
+picker.addEventListener("input", (e) => { if (e.target.id === "bgPick") { noteUser(); store.set("bg", e.target.value); applyPalette(C.name); } });
+picker.addEventListener("keydown", (e) => e.stopPropagation());
+$("#themeKey").addEventListener("click", () => {
+  const open = picker.hidden;
+  picker.hidden = !open;
+  $("#themeKey").setAttribute("aria-expanded", String(open));
+  if (open) renderPicker();
+});
+document.addEventListener("pointerdown", (e) => { if (!picker.hidden && !e.target.closest("#picker, #themeKey")) { picker.hidden = true; $("#themeKey").setAttribute("aria-expanded", "false"); } });
 
 /* ---------- keys (shared by you and the autopilot) ---------- */
 function handleKey(k, auto) {
@@ -900,7 +954,7 @@ async function visit(k) {
     else for (const ch of step) await press(ch, 90);
     await sleep(380 + Math.random() * 520);
     if (s === 4 && !eyeE) { await typeCmd("!./iris --watch"); await sleep(1600); }
-    if (s === 11 && k % 2 === 1) { await typeCmd(`colorscheme ${nextPalette()}`); await sleep(1200); }
+    if (s === 11 && k % 2 === 1 && !store.get("bg")) { await typeCmd(`colorscheme ${nextPalette()}`); await sleep(1200); }
   }
   if (file !== f) return;
   await sleep(1400);

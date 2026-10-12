@@ -19,7 +19,7 @@ A static portfolio in two rooms, like hancore.dev:
 
 ## Make it yours
 
-- `content.js`: who you are (`ME`), `PROJECTS`, `EXPERIENCE`, `STACK`,
+- `content.js`: who you are (`ME`), `PROJECTS`, `EXPERIENCE`, `STACK`, `BG_PRESETS`,
   `LOG` and `PALETTES`. Both pages read it.
 - `code.js`: the files shown on the intro. Each entry has a `path`,
   a `lang` (`js` or `py`) and the `text`. Keep them to ~60 lines.
@@ -46,3 +46,11 @@ you're using it.
 
 Editor: `↑ ↓` / `j k` switch sections, `← →` step through entries, `:` focuses
 the prompt, and `help` lists commands (`cd`, `open`, `theme`, `worm`, `clear`…).
+
+## Colours
+
+Pick a colorscheme or any background colour from `:theme` on the intro, or
+from `themes/` in the editor (`:bg #1a1024` and `bg #1a1024` work too). The
+lines, greys and text are re-mixed from the background you choose, and light
+backgrounds switch to dark text. The choice is remembered in the browser and
+carries from the intro into the editor.

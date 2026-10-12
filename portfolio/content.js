@@ -3,11 +3,11 @@
    Used by the intro (index.html) and the editor (site/index.html).
    ============================================================ */
 const ME = {
-  name: "Your Name",              // shown in the status bar
-  initials: "AX",                 // the little brand mark
-  handle: "acinonyx",             // prompt user: acinonyx@dev
+  name: "Gaurav",                 // shown in the status bar
+  initials: "GA",                 // the little brand mark
+  handle: "gaurav",               // prompt user: gaurav@dev
   host: "dev",
-  domain: "acinonyx.dev",
+  domain: "gaurav.dev",
   role: "Software engineer · Columbia University",
   location: "New York, NY",
   email: "you@example.com",
@@ -70,3 +70,21 @@ const PALETTES = {
   ice:      { bg: "#090c12", ink: "#d5dde8", chrome: "#97a3b3", dim: "#6c7888", rule: "#2a3240", line: "#131924", accent: "#4fd1ff", worm: "255, 92, 160", scheme: "dark",  note: "cold and quiet" },
   paper:    { bg: "#ebe5da", ink: "#1d1b1e", chrome: "#4f4a47", dim: "#7c7570", rule: "#c2b9ab", line: "#dfd8cb", accent: "#d4245f", worm: "52, 72, 196",   scheme: "light", note: "for daylight" },
 };
+
+// Background colours offered by the picker (any colour works; these are shortcuts).
+const BG_PRESETS = ["#0b0a0d", "#0e1726", "#1a1024", "#0f1d17", "#24140d", "#2b0f1a", "#ebe5da", "#dfe8ef"];
+
+// A palette re-tuned to sit on any background colour: ink flips for light
+// backgrounds, and the lines and greys are mixed from the new background.
+function withBg(p, bg) {
+  if (!bg || !/^#[0-9a-f]{6}$/i.test(bg)) return p;
+  const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const mix = (a, b, t) => "#" + rgb(a).map((v, i) => Math.round(v + (rgb(b)[i] - v) * t).toString(16).padStart(2, "0")).join("");
+  const [r, g, b] = rgb(bg), light = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.5;
+  const base = light ? PALETTES.paper : p.scheme === "light" ? PALETTES.dusk : p;
+  return {
+    ...base, bg, accent: p.accent, scheme: light ? "light" : "dark",
+    line: mix(bg, base.ink, 0.06), rule: mix(bg, base.ink, 0.18),
+    dim: mix(bg, base.ink, 0.48), chrome: mix(bg, base.ink, 0.68),
+  };
+}

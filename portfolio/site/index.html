@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>acinonyx.dev</title>
+<title>gaurav.dev</title>
 <meta name="description" content="Projects, experience, stack and the log, opened in an editor.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -310,6 +310,11 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
   font-size: 11px;
 }
 .copy:hover { color: var(--ink); border-color: var(--chrome); }
+.bgrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bgsw { width: 26px; height: 26px; border: 1px solid var(--rule); }
+.bgsw:hover, .bgsw[aria-pressed="true"] { outline: 1px solid var(--ink); outline-offset: 2px; }
+.bgany { display: inline-flex; align-items: center; gap: 6px; color: var(--chrome); cursor: pointer; }
+.bgany input { width: 28px; height: 28px; padding: 0; border: 1px solid var(--rule); background: none; cursor: pointer; }
 .palettes { display: flex; flex-wrap: wrap; gap: 10px; }
 .palette {
   width: 150px;
@@ -599,7 +604,7 @@ const sep = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, "'");
 /* ---------- palette ---------- */
 let C = {};
 function applyPalette(name) {
-  const p = PALETTES[name] || PALETTES.dusk;
+  const p = withBg(PALETTES[name] || PALETTES.dusk, store.get("bg"));
   const r = document.documentElement.style;
   for (const k of ["bg", "ink", "chrome", "dim", "rule", "line", "accent", "worm"]) r.setProperty("--" + k, p[k]);
   r.setProperty("color-scheme", p.scheme);
@@ -1005,11 +1010,25 @@ const RENDER = {
       for (const [name, p] of Object.entries(PALETTES)) {
         const b = el("button", "palette"); b.type = "button"; b.setAttribute("aria-pressed", String(C.name === name));
         b.innerHTML = `<div class="sw">${["bg", "line", "dim", "ink", "accent"].map((k) => `<span style="background:${p[k]}"></span>`).join("")}</div>${name}${C.name === name ? " *" : ""}<br><small>${esc(p.note)}</small>`;
-        b.addEventListener("click", () => { applyPalette(name); openSection(SECTIONS[sel]); });
+        b.addEventListener("click", () => { store.set("bg", ""); applyPalette(name); openSection(SECTIONS[sel]); });
         w.append(b);
       }
       return w;
-    } }, { out: out(`<span class="muted">\nor type</span> theme ${Object.keys(PALETTES).join(" | ")}`) }];
+    } }, { cmd: "bg --pick", out: () => {
+      const bg = store.get("bg") || "", row = el("div", "bgrow");
+      for (const c of BG_PRESETS) {
+        const b = el("button", "bgsw"); b.type = "button"; b.style.background = c; b.setAttribute("aria-label", "background " + c); b.setAttribute("aria-pressed", String(c === bg));
+        b.addEventListener("click", () => { store.set("bg", c); applyPalette(C.name); openSection(SECTIONS[sel]); });
+        row.append(b);
+      }
+      const lab = el("label", "bgany", `<input type="color" id="bgPick" value="${bg || C.bg}"><span>any colour</span>`);
+      lab.querySelector("input").addEventListener("input", (e) => { store.set("bg", e.target.value); applyPalette(C.name); });
+      lab.querySelector("input").addEventListener("change", () => openSection(SECTIONS[sel]));
+      const rs = el("button", "copy", "reset"); rs.type = "button";
+      rs.addEventListener("click", () => { store.set("bg", ""); applyPalette(C.name); openSection(SECTIONS[sel]); });
+      row.append(lab, rs);
+      return row;
+    } }, { out: out(`<span class="muted">\nor type</span> theme ${Object.keys(PALETTES).join(" | ")} <span class="muted">·</span> bg #1a1024`) }];
   },
 };
 const WINBAR = {
@@ -1042,7 +1061,7 @@ const cmdInput = $("#cmd");
 const hist = []; let hIdx = 0;
 const COMMANDS = {
   help: () => out(`<span class="muted">sections</span>  ${SECTIONS.map((s) => s.id).join("  ")}
-<span class="muted">commands</span>  ls · cd &lt;section&gt; · open &lt;project&gt; · whoami · theme &lt;name&gt;
+<span class="muted">commands</span>  ls · cd &lt;section&gt; · open &lt;project&gt; · whoami · theme &lt;name&gt; · bg &lt;#hex&gt;
           worm · mail · date · clear · help
 <span class="muted">keys</span>      ↑↓ section · ←→ entry · ↵ open · : prompt · esc leave`),
   ls: () => out(SECTIONS.map((s) => `<a href="#${s.id}" data-go="${s.id}" style="color:var(--ink);text-decoration:none">${s.id}/</a>`).join("  ")),
@@ -1058,7 +1077,14 @@ const COMMANDS = {
     return out(`opening <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--ink)">${esc(p.url)}</a>`);
   },
   whoami: () => out(`${esc(ME.name)} <span class="muted">— ${esc(ME.role)}</span>`),
+  bg: (a) => {
+    const v = (a[0] || "").replace(/^#?/, "#");
+    if (a[0] === "reset") { store.set("bg", ""); applyPalette(C.name); return out("background reset"); }
+    if (!/^#[0-9a-f]{6}$/i.test(v)) return out("usage: bg #1a1024 | bg reset", "out err");
+    store.set("bg", v); applyPalette(C.name); return out(`background → ${v}`);
+  },
   theme: (a) => {
+    if (PALETTES[a[0]]) store.set("bg", "");
     if (!PALETTES[a[0]]) return out(`themes: ${Object.keys(PALETTES).map((k) => k === C.name ? `<span class="hot">${k}</span>` : k).join(" ")}`);
     applyPalette(a[0]); return out(`theme → ${a[0]}`);
   },
